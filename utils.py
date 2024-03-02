@@ -1,5 +1,7 @@
 import pandas as pd
 import numpy as np
+from transformers import AutoModelForTokenClassification, TrainingArguments, Trainer
+from datasets import Dataset, load_metric
 
 def read_data_as_sentence(file_path, output_path):
     """
@@ -164,8 +166,8 @@ def tokenize_and_align_labels(tokenizer, dataset, label_all_tokens=True):
     label_all_tokens (boolean): Taked from tutorial if True all tokens have thier own label (some words maybe splited to more than one token).    
     """
 
-    # From tutorial with some changes to work with our data
-    tokenized_inputs = tokenizer(dataset['input_form'].tolist(), truncation=True, is_split_into_words=True)
+    # From tutorial with some changes to work with our data, as seen on https://huggingface.co/docs/transformers/preprocessing 
+    tokenized_inputs = tokenizer(dataset['input_form'].tolist(), truncation=True, is_split_into_words=True, padding=True, return_tensors="pt")
 
     labels = []
     # for i, label in enumerate(examples['argument']):
@@ -194,3 +196,86 @@ def tokenize_and_align_labels(tokenizer, dataset, label_all_tokens=True):
 
     tokenized_inputs["labels"] = labels
     return tokenized_inputs
+
+
+def get_labels_from_map(label_map):
+    """
+    Get a list of labels from a label map dictionary, excluding None.
+    Return a list of labels.
+    
+    Parameters:
+    - label_map (dict): a dictionary mapping labels to numerical values.
+    """
+    return [label for label in label_map.keys() if label is not None] #getting a list of labels stored as the dictionary keys
+
+def compute_metrics(predictions, labels, label_list, metric):
+    """
+    Compute evaluation metrics for Semantic Role Labeling (SRL).
+    Return a dictionary with evaluation metrics.
+    """
+    #defining the list of labels
+    #label_list = ['_', 'ARG0', 'ARG1', 'ARG1-DSP', 'ARG2', 'ARG3', 'ARG4', 'ARG5', 'ARGA', 'ARGM-ADJ', 'ARGM-ADV', 'ARGM-CAU', 'ARGM-COM', 'ARGM-CXN', 'ARGM-DIR', 'ARGM-DIS', 'ARGM-EXT', 'ARGM-GOL', 'ARGM-LOC', 'ARGM-LVB', 'ARGM-MNR', 'ARGM-MOD', 'ARGM-NEG', 'ARGM-PRD', 'ARGM-PRP', 'ARGM-PRR', 'ARGM-REC', 'ARGM-TMP', 'C-ARG0', 'C-ARG1', 'C-ARG1-DSP', 'C-ARG2', 'C-ARG3', 'C-ARG4', 'C-ARGM-ADV', 'C-ARGM-COM', 'C-ARGM-CXN', 'C-ARGM-DIR', 'C-ARGM-EXT', 'C-ARGM-GOL', 'C-ARGM-LOC', 'C-ARGM-MNR', 'C-ARGM-PRP', 'C-ARGM-PRR', 'C-ARGM-TMP', 'C-V', 'R-ARG0', 'R-ARG1', 'R-ARG2', 'R-ARG3', 'R-ARG4', 'R-ARGM-ADJ', 'R-ARGM-ADV', 'R-ARGM-CAU', 'R-ARGM-COM', 'R-ARGM-DIR', 'R-ARGM-GOL', 'R-ARGM-LOC', 'R-ARGM-MNR', 'R-ARGM-TMP']
+
+    #loading the seqeval metric to compute the metrics from the predictions
+    #metric = load_metric("seqeval")
+    
+    #predictions, labels = eval_pred
+    predictions = np.argmax(predictions, axis=2)
+
+    #removing ignored index (special tokens)
+    true_predictions = [
+        [label_list[p] for (p, l) in zip(prediction, label) if l != -100]
+        for prediction, label in zip(predictions, labels)
+    ]
+    true_labels = [
+        [label_list[l] for (p, l) in zip(prediction, label) if l != -100]
+        for prediction, label in zip(predictions, labels)
+    ]
+
+    results = metric.compute(predictions=true_predictions, references=true_labels)
+    return {
+        "precision": results["overall_precision"],
+        "recall": results["overall_recall"],
+        "f1": results["overall_f1"],
+        "accuracy": results["overall_accuracy"],
+    }
+
+
+def load_srl_model(model_checkpoint, label_list, batch_size=16):
+    """
+    Load a BERT transformer model for Semantic Role Labeling (SRL).
+    Return a tuple containing the loaded model, its name, and training arguments.
+    
+    Parameters:
+    - model_checkpoint (str): the name of the pre-trained model.
+    - label_list (list): a list of labels for token classification.
+    - batch_size (int): batch size for training and evaluation.
+    """
+    
+    model = AutoModelForTokenClassification.from_pretrained(model_checkpoint, num_labels=len(label_list))
+    model_name = model_checkpoint.split("/")[-1]
+    task = 'srl'
+    args = TrainingArguments(
+        f"{model_name}-finetuned-{task}",
+        evaluation_strategy="epoch",
+        learning_rate=2e-5,
+        per_device_train_batch_size=batch_size,
+        per_device_eval_batch_size=batch_size,
+        num_train_epochs=3,
+        weight_decay=0.01,
+    )
+    
+    return model, model_name, args
+
+def load_dataset(tokenized_dataset):
+    """
+    Load tokenized dataset for training or evaluation.
+    Return tokenized dataset as Dataset class. 
+    
+    Parameters:
+    - tokenized_dataset (dict): tokenized dataset.
+    """
+    dict_tokenized = Dataset.from_dict(tokenized_dataset)
+
+    return dict_tokenized
+
