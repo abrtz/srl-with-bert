@@ -71,8 +71,15 @@ def read_data_as_sentence(file_path, output_path):
         # After all words in a sentence processed, append all list of sentence to final list as a dict.
         # Create input_form of each sentence like: sentence [SEP] predicate
         # Also argument is list of all argument in sentence (labels) 
+        #final_list.append({
+        #                'input_form': ' '.join(form_list)+' [SEP] '+str(sentence[0]['predicate']).split('.')[0],
+        #                'argument': argument_list})
+        argument_list.append(None)
+        argument_list.append('_')
+        form_list.append('[SEP]')
+        form_list.append(str(sentence[0]['predicate']).split('.')[0])
         final_list.append({
-                        'input_form': ' '.join(form_list)+' [SEP] '+str(sentence[0]['predicate']).split('.')[0],
+                        'input_form': form_list,
                         'argument': argument_list})
     # Convert list to pandas dataframe
     df = pd.DataFrame(final_list)
@@ -111,13 +118,17 @@ def map_labels_in_dataframe(df):
 
     #getting unique labels for all arguments
     labels = exploded_df['argument'].unique()
-    labels.sort() #sorting the labels
-
+    
+    sorted_labels = sorted([label for label in labels if label is not None]) #converting array to list, removing None value, and sorting alphabetically
+    sorted_labels.append(None) #appeding None value back again
+    sorted_labels_array = np.array(sorted_labels) #converting list back to array
+    
     #moving '_' item to position 0
-    labels = np.concatenate((['_'], np.delete(labels, np.where(labels == '_'))))
-
+    labels = np.concatenate((['_'], np.delete(sorted_labels_array, np.where(sorted_labels_array == '_'))))
+    
     #mapping the argument labels to a number
     label_map = {label: index for index, label in enumerate(labels)}
+    label_map[None] = None #converting the value of None back to None
 
     #adding new column with mapped labels to the df
     df['mapped_labels'] = df['argument'].apply(lambda x: map_labels_to_numbers(x,label_map))
