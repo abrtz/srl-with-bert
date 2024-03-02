@@ -90,34 +90,23 @@ def read_data_as_sentence(file_path, output_path):
 
 
 #mapping labels to numbers
-def map_labels_to_numbers(label_list,label_map):
-    """Map a list of labels to corresponding numerical values based on a pre-defined label mapping.
-    Return a list containing the mapped numerical values corresponding to the input labels.
+
+def get_label_mapping(train_df, test_df, dev_df):
+    """
+    Get the mapping of labels from the argument columns of multiple dataframes.
+    Return a dictionary mapping labels to numerical values. None key stays as None value.
 
     Parameters:
-    - label_list (list): a list of labels to be mapped to numerical values.
-    - label_map (dict): A dictionary mapping labels to numerical values.
+    - train_data (DataFrame): pandas DataFrame containing the training data.
+    - test_data (DataFrame): pandas DataFrame containing the testing data.
+    - dev_data (DataFrame): pandas DataFrame containing the development data.
     """
-    
-    mapped_labels = [label_map[label] for label in label_list if label in label_map]
-    return mapped_labels
 
-
-def map_labels_in_dataframe(df):
-    """
-    Explode the lists in a specified column of a DataFrame to obtain all labels, then map them to numerical values.
-    Add a new column to the DataFrame with the mapped labels.
-    Return a new DataFrame with an additional column containing the mapped numerical labels.
+    #concatenating the argument columns from all dataframes to collect all possible arguments
+    all_labels = pd.concat([train_df['argument'], test_df['argument'], dev_df['argument']], ignore_index=True)
     
-    Parameters:
-    - df (DataFrame): input pandas DataFrame containing a column with lists of labels.
-    """
-    
-    #exploding the lists in the column to get all the arguments
-    exploded_df = df.explode('argument')
-
-    #getting unique labels for all arguments
-    labels = exploded_df['argument'].unique()
+    #extract unique labels
+    labels = all_labels.explode().unique()
     
     sorted_labels = sorted([label for label in labels if label is not None]) #converting array to list, removing None value, and sorting alphabetically
     sorted_labels.append(None) #appeding None value back again
@@ -129,6 +118,33 @@ def map_labels_in_dataframe(df):
     #mapping the argument labels to a number
     label_map = {label: index for index, label in enumerate(labels)}
     label_map[None] = None #converting the value of None back to None
+    
+    return label_map
+
+
+def map_labels_to_numbers(label_list,label_map):
+    """Map a list of labels to corresponding numerical values based on a pre-defined label mapping.
+    Return a list containing the mapped numerical values corresponding to the input labels.
+
+    Parameters:
+    - label_list (list): a list of labels to be mapped to numerical values.
+    - label_map (dict): a dictionary mapping labels to numerical values.
+    """
+    
+    mapped_labels = [label_map[label] for label in label_list if label in label_map]
+    return mapped_labels
+
+
+def map_labels_in_dataframe(df,label_map):
+    """
+    Map labels in a specified DataFrame column to numerical values based on a pre-defined label mapping.
+    Add a new column to the DataFrame with the mapped labels.
+    Return a new DataFrame with an additional column containing the mapped numerical labels.
+
+    Parameters:
+    - df (DataFrame): input pandas DataFrame containing a column with lists of labels.
+    - label_map (dict): a dictionary mapping labels to numerical values.
+    """
 
     #adding new column with mapped labels to the df
     df['mapped_labels'] = df['argument'].apply(lambda x: map_labels_to_numbers(x,label_map))
