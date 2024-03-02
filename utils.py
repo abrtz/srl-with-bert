@@ -1,4 +1,6 @@
 import pandas as pd
+import transformers
+from transformers import AutoTokenizer
 
 
 def read_data_as_sentence(file_path, output_path):
@@ -70,9 +72,15 @@ def read_data_as_sentence(file_path, output_path):
             argument_list.append(word['argument'])
         # After all words in a sentence processed, append all list of sentence to final list as a dict.
         # Create input_form of each sentence like: sentence [SEP] predicate
-        # Also argument is list of all argument in sentence (labels) 
+        # Also argument is list of all argument in sentence (labels)
+        # Also append 'None' and one '_' to argument, and append '[SEP]' and 'predicate' to form per each sentence 
+        argument_list.append(None)
+        argument_list.append('_')
+        form_list.append('[SEP]')
+        form_list.append(str(sentence[0]['predicate']).split('.')[0])
         final_list.append({
-                        'input_form': ' '.join(form_list)+' [SEP] '+str(sentence[0]['predicate']).split('.')[0],
+                        # 'input_form': ' '.join(form_list)+' [SEP] '+str(sentence[0]['predicate']).split('.')[0],
+                        'input_form': form_list,
                         'argument': argument_list})
     # Convert list to pandas dataframe
     df = pd.DataFrame(final_list)
@@ -80,3 +88,46 @@ def read_data_as_sentence(file_path, output_path):
     df.to_csv(output_path)
     # return Dataframe
     return df
+
+def tokenize_and_align_labels(tokenizer, dataset, label_all_tokens=True):
+    """
+    preprocess data and tokenize it using model tokenizer.
+    Extract features from the data and return a datarame.
+
+    Return Tokenized data.
+
+    tokenizer (transformers AutoTokenizer): tokenizer of pretrained model.
+    dataset (dataframe): dataframe of list of words and list of labels of each sentence.
+    label_all_tokens (boolean): Taked from tutorial if True all tokens have thier own label (some words maybe splited to more than one token).    
+    """
+
+    # From tutorial with some changes to work with our data
+    tokenized_inputs = tokenizer(dataset['input_form'].tolist(), truncation=True, is_split_into_words=True)
+
+    labels = []
+    # for i, label in enumerate(examples['argument']):
+    for i, label in enumerate(dataset['argument'].tolist()):
+        # print('label:', label)
+        word_ids = tokenized_inputs.word_ids(batch_index=i)
+        previous_word_idx = None
+        label_ids = []
+        for word_idx in word_ids:
+            # Special tokens have a word id that is None. We set the label to -100 so they are automatically
+            # ignored in the loss function.
+            if word_idx is None:
+                label_ids.append(-100)
+            elif label[word_idx] is None:
+                label_ids.append(-100)
+            # We set the label for the first token of each word.
+            elif word_idx != previous_word_idx:
+                label_ids.append(label[word_idx])
+            # For the other tokens in a word, we set the label to either the current label or -100, depending on
+            # the label_all_tokens flag.
+            else:
+                label_ids.append(label[word_idx] if label_all_tokens else -100)
+            previous_word_idx = word_idx
+
+        labels.append(label_ids)
+
+    tokenized_inputs["labels"] = labels
+    return tokenized_inputs
