@@ -54,7 +54,11 @@ def read_data_as_sentence(file_path, output_path):
                 token['predicate'] = predicate_form[0]
                 
                 # Keep only the relevant argument for this predicate. Overwrite 'V' with '_'.
-                token['argument'] = token['argument'][index] if token['argument'][index] != 'V' else '_'
+                if token['argument'][index] == 'V' or token['argument'][index] == 'C-V':
+                    token['argument'] = '_'
+                else:
+                    token['argument'] = token['argument'][index]  
+                # token['argument'] = token['argument'][index] if token['argument'][index] != 'V' else '_'
             expanded_sentences.append(sentence_copy)
 
     # Create a list to store each sentence.
