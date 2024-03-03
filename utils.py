@@ -2,6 +2,9 @@ import pandas as pd
 import numpy as np
 from transformers import AutoModelForTokenClassification, TrainingArguments, Trainer
 from datasets import Dataset, load_metric
+import ast
+from seqeval.metrics import f1_score, classification_report
+
 
 def read_data_as_sentence(file_path, output_path):
     """
@@ -23,6 +26,7 @@ def read_data_as_sentence(file_path, output_path):
             if line[0].startswith('#'):
                 continue
             elif line[0].strip() != '':
+
                 # Create a token if its ID does not contain a period
                 if '.' not in line[0] and len(line) > 10:
                     token = {
@@ -32,7 +36,7 @@ def read_data_as_sentence(file_path, output_path):
                     }
                     # Append the token to the sentence.
                     sentence.append(token)
-                    
+
             # A new line indicates the end of a sentence.
             elif line[0].strip() == '':
                 # Append the completed sentence to the sentences list.
@@ -49,20 +53,24 @@ def read_data_as_sentence(file_path, output_path):
         # for every predicate, create a copy of the sentence.
         for index, predicate in enumerate(predicates):
             sentence_copy = [token.copy() for token in sentence]
+            predicate_form = [token['form'] for token in sentence_copy if token['predicate'] == predicate]
             for token in sentence_copy:
-                # Keep only this predicate.
-                if token['predicate'] != predicate:
-                    token['predicate'] = predicate.split('.')[0]
 
+                token['predicate'] = predicate_form[0]
+                
                 # Keep only the relevant argument for this predicate. Overwrite 'V' with '_'.
-                token['argument'] = token['argument'][index] if token['argument'][index] != 'V' else '_'
+                if token['argument'][index] == 'V' or token['argument'][index] == 'C-V':
+                    token['argument'] = '_'
+                else:
+                    token['argument'] = token['argument'][index]  
+                # token['argument'] = token['argument'][index] if token['argument'][index] != 'V' else '_'
             expanded_sentences.append(sentence_copy)
 
     # Create a list to store each sentence.
     final_list = []
     # Iterate over all sentences after copy sentences for each predicate.
     for sentence in expanded_sentences:
-        # Create empty lists for form and argument of sentence.
+        # Create empty lists for eah feature of data.
         form_list =[]
         argument_list =[]
         # For each word in sentence append features in their list
@@ -70,16 +78,11 @@ def read_data_as_sentence(file_path, output_path):
         for word in sentence:
             form_list.append(word['form'])
             argument_list.append(word['argument'])
-        # After all words in a sentence processed, append all list of sentence to final list as a dict.
-        # Create input_form of each sentence like: sentence [SEP] predicate
-        # Also argument is list of all argument in sentence (labels) 
-        #final_list.append({
-        #                'input_form': ' '.join(form_list)+' [SEP] '+str(sentence[0]['predicate']).split('.')[0],
-        #                'argument': argument_list})
         argument_list.append(None)
-        argument_list.append('_')
+        argument_list.append(None) #('_')
         form_list.append('[SEP]')
         form_list.append(str(sentence[0]['predicate']).split('.')[0])
+        # After all words in a sentence processed, append all list of sentence to final list as a dict.
         final_list.append({
                         'input_form': form_list,
                         'argument': argument_list})
@@ -89,7 +92,6 @@ def read_data_as_sentence(file_path, output_path):
     df.to_csv(output_path)
     # return Dataframe
     return df
-
 
 #mapping labels to numbers
 
@@ -233,6 +235,7 @@ def compute_metrics(predictions, labels, label_list, metric):
     ]
 
     results = metric.compute(predictions=true_predictions, references=true_labels)
+    
     return {
         "precision": results["overall_precision"],
         "recall": results["overall_recall"],
@@ -279,3 +282,64 @@ def load_dataset(tokenized_dataset):
 
     return dict_tokenized
 
+def write_predictions_to_csv(predictions, labels, label_list, file_path):
+    """
+    Write true predictions and true labels to a CSV file using a DataFrame.
+
+    Parameters:
+    - predictions (np array): array of true predictions.
+    - labels (np array): array of gold labels.
+    - label_list (list): list with possible labels for arguments
+    - file_path (str): path to the CSV file to write the predictions to.
+    """
+
+    predictions = np.argmax(predictions, axis=2)
+    
+    true_predictions = [
+        [label_list[p] for (p, l) in zip(prediction, label) if l != -100]
+        for prediction, label in zip(predictions, labels)
+    ]
+    true_labels = [
+        [label_list[l] for (p, l) in zip(prediction, label) if l != -100]
+        for prediction, label in zip(predictions, labels)
+    ]
+    
+    #creating a DataFrame with columns 'prediction' and 'gold_label'
+    df = pd.DataFrame({'prediction': true_predictions, 'gold_label': true_labels})
+    
+    #writing the DataFrame to a CSV file
+    df.to_csv(file_path, index=False)
+
+
+def read_list(string):
+    """
+    Convert a string representation of a list to an actual list.
+    """
+    return ast.literal_eval(string)
+
+def compute_evaluation_metrics_from_csv(file_path):
+    """
+    Compute evaluation metrics (F1 score and classification report) from a CSV file containing predictions and gold labels.
+    Return F1 score and classification report.
+    
+    Parameters:
+    - file_path (str): path to the CSV file containing predictions and gold labels.
+    """
+    
+    #defining a dictionary specifying the column names and their corresponding converters
+    converters = {'prediction': read_list, 'gold_label': read_list}
+
+    #reading the CSV file into a DataFrame, applying converters to convert lists from strings to lists
+    df = pd.read_csv(file_path, converters=converters)
+
+    #extracting true predictions and true labels as lists
+    true_predictions = df['prediction'].tolist()
+    true_labels = df['gold_label'].tolist()
+
+    #computing F1 score
+    f1 = f1_score(true_labels, true_predictions)
+
+    #creating classification report
+    report = classification_report(true_labels, true_predictions)
+
+    return f1, report
