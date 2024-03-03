@@ -70,7 +70,7 @@ def read_data_as_sentence(file_path, output_path):
             form_list.append(word['form'])
             argument_list.append(word['argument'])
         argument_list.append(None)
-        argument_list.append('_')
+        argument_list.append(None) #('_')
         form_list.append('[SEP]')
         form_list.append(str(sentence[0]['predicate']).split('.')[0])
         # After all words in a sentence processed, append all list of sentence to final list as a dict.
