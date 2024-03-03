@@ -75,7 +75,8 @@ def read_data_as_sentence(file_path, output_path):
         # Also argument is list of all argument in sentence (labels)
         # Also append 'None' and one '_' to argument, and append '[SEP]' and 'predicate' to form per each sentence 
         argument_list.append(None)
-        argument_list.append('_')
+        argument_list.append(None)
+        # argument_list.append('_')
         form_list.append('[SEP]')
         form_list.append(str(sentence[0]['predicate']).split('.')[0])
         final_list.append({
