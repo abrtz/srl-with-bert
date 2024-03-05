@@ -1,9 +1,9 @@
 import pandas as pd
 import numpy as np
 from transformers import AutoModelForTokenClassification, TrainingArguments, Trainer
-from datasets import Dataset, load_metric
+from datasets import Dataset
 import ast
-from seqeval.metrics import f1_score, classification_report
+from sklearn.metrics import classification_report
 
 
 def read_data_as_sentence(file_path, output_path):
@@ -210,16 +210,13 @@ def get_labels_from_map(label_map):
     """
     return [label for label in label_map.keys() if label is not None] #getting a list of labels stored as the dictionary keys
 
-def compute_metrics(predictions, labels, label_list, metric):
+def compute_metrics(predictions, labels, label_list):
     """
     Compute evaluation metrics for Semantic Role Labeling (SRL).
     Return a dictionary with evaluation metrics.
     """
-    #defining the list of labels
-    #label_list = ['_', 'ARG0', 'ARG1', 'ARG1-DSP', 'ARG2', 'ARG3', 'ARG4', 'ARG5', 'ARGA', 'ARGM-ADJ', 'ARGM-ADV', 'ARGM-CAU', 'ARGM-COM', 'ARGM-CXN', 'ARGM-DIR', 'ARGM-DIS', 'ARGM-EXT', 'ARGM-GOL', 'ARGM-LOC', 'ARGM-LVB', 'ARGM-MNR', 'ARGM-MOD', 'ARGM-NEG', 'ARGM-PRD', 'ARGM-PRP', 'ARGM-PRR', 'ARGM-REC', 'ARGM-TMP', 'C-ARG0', 'C-ARG1', 'C-ARG1-DSP', 'C-ARG2', 'C-ARG3', 'C-ARG4', 'C-ARGM-ADV', 'C-ARGM-COM', 'C-ARGM-CXN', 'C-ARGM-DIR', 'C-ARGM-EXT', 'C-ARGM-GOL', 'C-ARGM-LOC', 'C-ARGM-MNR', 'C-ARGM-PRP', 'C-ARGM-PRR', 'C-ARGM-TMP', 'C-V', 'R-ARG0', 'R-ARG1', 'R-ARG2', 'R-ARG3', 'R-ARG4', 'R-ARGM-ADJ', 'R-ARGM-ADV', 'R-ARGM-CAU', 'R-ARGM-COM', 'R-ARGM-DIR', 'R-ARGM-GOL', 'R-ARGM-LOC', 'R-ARGM-MNR', 'R-ARGM-TMP']
-
-    #loading the seqeval metric to compute the metrics from the predictions
-    #metric = load_metric("seqeval")
+    predict = []
+    gold = []
     
     #predictions, labels = eval_pred
     predictions = np.argmax(predictions, axis=2)
@@ -234,13 +231,22 @@ def compute_metrics(predictions, labels, label_list, metric):
         for prediction, label in zip(predictions, labels)
     ]
 
-    results = metric.compute(predictions=true_predictions, references=true_labels)
+    for item in true_predictions:
+        predict.extend(item)
+
+    for item in true_labels:
+        gold.extend(item)
+
+    labels = set(predict+gold) #creating the set of labels
+    labels=list(labels)
+
+    report = classification_report(gold,predict,target_names=labels,output_dict=True)
     
     return {
-        "precision": results["overall_precision"],
-        "recall": results["overall_recall"],
-        "f1": results["overall_f1"],
-        "accuracy": results["overall_accuracy"],
+           "precision": report["macro avg"]["precision"],
+    "recall": report["macro avg"]["recall"],
+    "f1": report["macro avg"]["f1-score"],
+    "accuracy": report["accuracy"]
     }
 
 
@@ -292,7 +298,9 @@ def write_predictions_to_csv(predictions, labels, label_list, file_path):
     - label_list (list): list with possible labels for arguments
     - file_path (str): path to the CSV file to write the predictions to.
     """
-
+    predict = []
+    gold = []
+    
     predictions = np.argmax(predictions, axis=2)
     
     true_predictions = [
@@ -303,19 +311,19 @@ def write_predictions_to_csv(predictions, labels, label_list, file_path):
         [label_list[l] for (p, l) in zip(prediction, label) if l != -100]
         for prediction, label in zip(predictions, labels)
     ]
+
+    for item in true_predictions:
+        predict.extend(item)
+
+    for item in true_labels:
+        gold.extend(item)
     
     #creating a DataFrame with columns 'prediction' and 'gold_label'
-    df = pd.DataFrame({'prediction': true_predictions, 'gold_label': true_labels})
+    df = pd.DataFrame({'prediction': predict, 'gold_label': gold})
     
     #writing the DataFrame to a CSV file
     df.to_csv(file_path, index=False)
 
-
-def read_list(string):
-    """
-    Convert a string representation of a list to an actual list.
-    """
-    return ast.literal_eval(string)
 
 def compute_evaluation_metrics_from_csv(file_path):
     """
@@ -326,20 +334,13 @@ def compute_evaluation_metrics_from_csv(file_path):
     - file_path (str): path to the CSV file containing predictions and gold labels.
     """
     
-    #defining a dictionary specifying the column names and their corresponding converters
-    converters = {'prediction': read_list, 'gold_label': read_list}
-
-    #reading the CSV file into a DataFrame, applying converters to convert lists from strings to lists
-    df = pd.read_csv(file_path, converters=converters)
+    #reading the CSV file into a DataFrame
+    df = pd.read_csv(file_path)
 
     #extracting true predictions and true labels as lists
     true_predictions = df['prediction'].tolist()
     true_labels = df['gold_label'].tolist()
 
-    #computing F1 score
-    f1 = f1_score(true_labels, true_predictions)
+    report = classification_report(true_predictions,true_labels)
 
-    #creating classification report
-    report = classification_report(true_labels, true_predictions)
-
-    return f1, report
+    return report
