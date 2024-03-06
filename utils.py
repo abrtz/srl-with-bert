@@ -9,25 +9,31 @@ from sklearn.metrics import classification_report
 def read_data_as_sentence(file_path, output_path):
     """
     Parses the CoNNL-U Plus file and returns a dataframe of sentences.
-    Extract features from the data and return a datarame.
+    Extracting features from the data and return a dataframe of sentence's Input_form list and sentence's arguments list.
 
     Returns a dataframe, where each row represents one sentence with its all words and all features of words (each columns is a list with lengh of number of words in sentence).
 
     file_path (str): The file path to the data to be preprocessed.
     output_path (str): The file path to the save processed dataframe.
     """
-
+    # sentences list for all sentence in data file
     sentences = []
+    # sentence list for all token in each sentence
     sentence = []  # Initialize an empty list for the current sentence
+    # Open data file
     with open(file_path, 'r', encoding="utf8") as file:
+        # For each line in data file
         for line in file:
+            # split line by TAB (\t)
             line = line.strip().split('\t')
             # If the line starts with '#', it's a comment, ignore it
             if line[0].startswith('#'):
                 continue
+            # If the line is not empty
             elif line[0].strip() != '':
 
                 # Create a token if its ID does not contain a period
+                # Each token only has form, predicate, and arguments (argument per each predicate of sentence)
                 if '.' not in line[0] and len(line) > 10:
                     token = {
                         'form': line[1],
@@ -38,6 +44,7 @@ def read_data_as_sentence(file_path, output_path):
                     sentence.append(token)
 
             # A new line indicates the end of a sentence.
+            # If line is empty one sentence has been finished.
             elif line[0].strip() == '':
                 # Append the completed sentence to the sentences list.
                 sentences.append(sentence)
@@ -50,27 +57,30 @@ def read_data_as_sentence(file_path, output_path):
         # Find all predicates in the sentence.
         predicates = [token['predicate'] for token in sentence if token['predicate'] != '_']
 
-        # for every predicate, create a copy of the sentence.
+        # For every predicate, create a copy of the sentence.
         for index, predicate in enumerate(predicates):
+            # For each predicate in the sentence, we make a copy of the sentence.
             sentence_copy = [token.copy() for token in sentence]
+            # Finding the predicate 'form' of the sentence predicate.
             predicate_form = [token['form'] for token in sentence_copy if token['predicate'] == predicate]
             for token in sentence_copy:
 
                 token['predicate'] = predicate_form[0]
-                
-                # Keep only the relevant argument for this predicate. Overwrite 'V' with '_'.
+
+                # Keep only the relevant argument for this predicate. Overwrite 'V' and 'C-V' with '_'.
                 if token['argument'][index] == 'V' or token['argument'][index] == 'C-V':
                     token['argument'] = '_'
                 else:
-                    token['argument'] = token['argument'][index]  
+                    token['argument'] = token['argument'][index]
                 # token['argument'] = token['argument'][index] if token['argument'][index] != 'V' else '_'
+                # token['argument'] = token['argument'][index] if token['argument'][index] != 'C-V' else '_'
             expanded_sentences.append(sentence_copy)
 
     # Create a list to store each sentence.
     final_list = []
     # Iterate over all sentences after copy sentences for each predicate.
     for sentence in expanded_sentences:
-        # Create empty lists for eah feature of data.
+        # Create two empty list one for input_form (token form) and one for arguments of sentence.
         form_list =[]
         argument_list =[]
         # For each word in sentence append features in their list
@@ -78,12 +88,20 @@ def read_data_as_sentence(file_path, output_path):
         for word in sentence:
             form_list.append(word['form'])
             argument_list.append(word['argument'])
+        # Creating emptylist, a list of "_" with the same length as the argument list, to control statements whose argument list is empty.
+        emptylist = ['_']* (len(argument_list))##
+        # append two None into argument list and emptylist. one for [SEP] and one for predicate that are appended into form list.
         argument_list.append(None)
-        argument_list.append(None) #('_')
+        argument_list.append(None)
+        emptylist.append(None)##
+        emptylist.append(None)##
+        # argument_list.append('_')
+        # append [SEP] and predicate into form list
         form_list.append('[SEP]')
         form_list.append(str(sentence[0]['predicate']).split('.')[0])
         # After all words in a sentence processed, append all list of sentence to final list as a dict.
-        final_list.append({
+        if emptylist != argument_list:##
+            final_list.append({
                         'input_form': form_list,
                         'argument': argument_list})
     # Convert list to pandas dataframe
@@ -165,24 +183,30 @@ def tokenize_and_align_labels(tokenizer, dataset, label_all_tokens=True):
 
     tokenizer (transformers AutoTokenizer): tokenizer of pretrained model.
     dataset (dataframe): dataframe of list of words and list of labels of each sentence.
-    label_all_tokens (boolean): Taked from tutorial if True all tokens have thier own label (some words maybe splited to more than one token).    
+    label_all_tokens (boolean): Taked from tutorial if True all tokens have thier own label (some words maybe splited to more than one token).
     """
 
-    # From tutorial with some changes to work with our data, as seen on https://huggingface.co/docs/transformers/preprocessing 
+    # From tutorial with some changes to work with our data, as seen on https://huggingface.co/docs/transformers/preprocessing .
+    # Use 'tolist()' function to make a list of input_form column.
     tokenized_inputs = tokenizer(dataset['input_form'].tolist(), truncation=True, is_split_into_words=True, padding=True, return_tensors="pt")
 
     labels = []
-    # for i, label in enumerate(examples['argument']):
+    # Use 'tolist()' function to make a list of mapped_labels column.
+    # For each mapped ARG in 'mapped_labels' column (each sentence).
     for i, label in enumerate(dataset['mapped_labels'].tolist()):
-        # print('label:', label)
+        # Get list of tokenizer word_id for current sentence (i: index of current sentence).
         word_ids = tokenized_inputs.word_ids(batch_index=i)
+        # Use previous_word_idx to store word_ids of previous token.
         previous_word_idx = None
+        # Empty list for store all token (subtoken) labels.
         label_ids = []
+        # For each id in word_ids
         for word_idx in word_ids:
-            # Special tokens have a word id that is None. We set the label to -100 so they are automatically
+            # Special tokens have a word id that is None. We set the label to -100 so they are automatically.
             # ignored in the loss function.
             if word_idx is None:
                 label_ids.append(-100)
+            # If label in None (that mean we add this into input_form). So We set the label to -100 so they are automatically.
             elif label[word_idx] is None:
                 label_ids.append(-100)
             # We set the label for the first token of each word.
