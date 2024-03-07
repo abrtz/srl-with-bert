@@ -343,3 +343,12 @@ def compute_evaluation_metrics_from_csv(file_path):
     report = classification_report(true_labels, true_predictions)
 
     return f1, report
+
+def print_sentences(dataset, n=20):
+
+    for form, argument in zip(dataset.input_form[:n], dataset.argument[:n]):
+        for f, a in zip(form, argument):
+            if f == '[SEP]':
+                print('-' * 40)
+            print(f"form: {f:<15} argument: {a}")
+        print('\n' + '=' * 40 + '\n')

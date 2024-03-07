@@ -1,1 +1,3 @@
 data/*.preprocessed.csv
+__pycache__/
+distilbert-base-uncased-finetuned-srl/*
