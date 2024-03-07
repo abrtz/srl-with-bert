@@ -274,7 +274,7 @@ def compute_metrics(predictions, labels, label_list):
     }
 
 
-def load_srl_model(model_checkpoint, label_list, batch_size=16):
+def load_srl_model(model_id, label_list, batch_size=16):
     """
     Load a BERT transformer model for Semantic Role Labeling (SRL).
     Return a tuple containing the loaded model, its name, and training arguments.
@@ -285,11 +285,10 @@ def load_srl_model(model_checkpoint, label_list, batch_size=16):
     - batch_size (int): batch size for training and evaluation.
     """
     
-    model = AutoModelForTokenClassification.from_pretrained(model_checkpoint, num_labels=len(label_list))
-    model_name = model_checkpoint.split("/")[-1]
+    model = AutoModelForTokenClassification.from_pretrained(model_id, num_labels=len(label_list))
     task = 'srl'
     args = TrainingArguments(
-        f"{model_name}-finetuned-{task}",
+        f"{model_id}-finetuned-{task}",
         evaluation_strategy="epoch",
         learning_rate=2e-5,
         per_device_train_batch_size=batch_size,
@@ -298,7 +297,7 @@ def load_srl_model(model_checkpoint, label_list, batch_size=16):
         weight_decay=0.01,
     )
     
-    return model, model_name, args
+    return model, args
 
 def load_dataset(tokenized_dataset):
     """
