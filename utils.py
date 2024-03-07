@@ -1,33 +1,39 @@
 import pandas as pd
 import numpy as np
 from transformers import AutoModelForTokenClassification, TrainingArguments, Trainer
-from datasets import Dataset, load_metric
+from datasets import Dataset
 import ast
-from seqeval.metrics import f1_score, classification_report
+from sklearn.metrics import classification_report
 
 
 def read_data_as_sentence(file_path, output_path):
     """
     Parses the CoNNL-U Plus file and returns a dataframe of sentences.
-    Extract features from the data and return a datarame.
+    Extracting features from the data and return a dataframe of sentence's Input_form list and sentence's arguments list.
 
     Returns a dataframe, where each row represents one sentence with its all words and all features of words (each columns is a list with lengh of number of words in sentence).
 
     file_path (str): The file path to the data to be preprocessed.
     output_path (str): The file path to the save processed dataframe.
     """
-
+    # sentences list for all sentence in data file
     sentences = []
+    # sentence list for all token in each sentence
     sentence = []  # Initialize an empty list for the current sentence
+    # Open data file
     with open(file_path, 'r', encoding="utf8") as file:
+        # For each line in data file
         for line in file:
+            # split line by TAB (\t)
             line = line.strip().split('\t')
             # If the line starts with '#', it's a comment, ignore it
             if line[0].startswith('#'):
                 continue
+            # If the line is not empty
             elif line[0].strip() != '':
 
                 # Create a token if its ID does not contain a period
+                # Each token only has form, predicate, and arguments (argument per each predicate of sentence)
                 if '.' not in line[0] and len(line) > 10:
                     token = {
                         'form': line[1],
@@ -38,6 +44,7 @@ def read_data_as_sentence(file_path, output_path):
                     sentence.append(token)
 
             # A new line indicates the end of a sentence.
+            # If line is empty one sentence has been finished.
             elif line[0].strip() == '':
                 # Append the completed sentence to the sentences list.
                 sentences.append(sentence)
@@ -50,27 +57,30 @@ def read_data_as_sentence(file_path, output_path):
         # Find all predicates in the sentence.
         predicates = [token['predicate'] for token in sentence if token['predicate'] != '_']
 
-        # for every predicate, create a copy of the sentence.
+        # For every predicate, create a copy of the sentence.
         for index, predicate in enumerate(predicates):
+            # For each predicate in the sentence, we make a copy of the sentence.
             sentence_copy = [token.copy() for token in sentence]
+            # Finding the predicate 'form' of the sentence predicate.
             predicate_form = [token['form'] for token in sentence_copy if token['predicate'] == predicate]
             for token in sentence_copy:
 
                 token['predicate'] = predicate_form[0]
-                
-                # Keep only the relevant argument for this predicate. Overwrite 'V' with '_'.
+
+                # Keep only the relevant argument for this predicate. Overwrite 'V' and 'C-V' with '_'.
                 if token['argument'][index] == 'V' or token['argument'][index] == 'C-V':
                     token['argument'] = '_'
                 else:
-                    token['argument'] = token['argument'][index]  
+                    token['argument'] = token['argument'][index]
                 # token['argument'] = token['argument'][index] if token['argument'][index] != 'V' else '_'
+                # token['argument'] = token['argument'][index] if token['argument'][index] != 'C-V' else '_'
             expanded_sentences.append(sentence_copy)
 
     # Create a list to store each sentence.
     final_list = []
     # Iterate over all sentences after copy sentences for each predicate.
     for sentence in expanded_sentences:
-        # Create empty lists for eah feature of data.
+        # Create two empty list one for input_form (token form) and one for arguments of sentence.
         form_list =[]
         argument_list =[]
         # For each word in sentence append features in their list
@@ -78,12 +88,20 @@ def read_data_as_sentence(file_path, output_path):
         for word in sentence:
             form_list.append(word['form'])
             argument_list.append(word['argument'])
+        # Creating emptylist, a list of "_" with the same length as the argument list, to control statements whose argument list is empty.
+        emptylist = ['_']* (len(argument_list))##
+        # append two None into argument list and emptylist. one for [SEP] and one for predicate that are appended into form list.
         argument_list.append(None)
-        argument_list.append(None) #('_')
+        argument_list.append(None)
+        emptylist.append(None)##
+        emptylist.append(None)##
+        # argument_list.append('_')
+        # append [SEP] and predicate into form list
         form_list.append('[SEP]')
         form_list.append(str(sentence[0]['predicate']).split('.')[0])
         # After all words in a sentence processed, append all list of sentence to final list as a dict.
-        final_list.append({
+        if emptylist != argument_list:##
+            final_list.append({
                         'input_form': form_list,
                         'argument': argument_list})
     # Convert list to pandas dataframe
@@ -165,24 +183,30 @@ def tokenize_and_align_labels(tokenizer, dataset, label_all_tokens=True):
 
     tokenizer (transformers AutoTokenizer): tokenizer of pretrained model.
     dataset (dataframe): dataframe of list of words and list of labels of each sentence.
-    label_all_tokens (boolean): Taked from tutorial if True all tokens have thier own label (some words maybe splited to more than one token).    
+    label_all_tokens (boolean): Taked from tutorial if True all tokens have thier own label (some words maybe splited to more than one token).
     """
 
-    # From tutorial with some changes to work with our data, as seen on https://huggingface.co/docs/transformers/preprocessing 
+    # From tutorial with some changes to work with our data, as seen on https://huggingface.co/docs/transformers/preprocessing .
+    # Use 'tolist()' function to make a list of input_form column.
     tokenized_inputs = tokenizer(dataset['input_form'].tolist(), truncation=True, is_split_into_words=True, padding=True, return_tensors="pt")
 
     labels = []
-    # for i, label in enumerate(examples['argument']):
+    # Use 'tolist()' function to make a list of mapped_labels column.
+    # For each mapped ARG in 'mapped_labels' column (each sentence).
     for i, label in enumerate(dataset['mapped_labels'].tolist()):
-        # print('label:', label)
+        # Get list of tokenizer word_id for current sentence (i: index of current sentence).
         word_ids = tokenized_inputs.word_ids(batch_index=i)
+        # Use previous_word_idx to store word_ids of previous token.
         previous_word_idx = None
+        # Empty list for store all token (subtoken) labels.
         label_ids = []
+        # For each id in word_ids
         for word_idx in word_ids:
-            # Special tokens have a word id that is None. We set the label to -100 so they are automatically
+            # Special tokens have a word id that is None. We set the label to -100 so they are automatically.
             # ignored in the loss function.
             if word_idx is None:
                 label_ids.append(-100)
+            # If label in None (that mean we add this into input_form). So We set the label to -100 so they are automatically.
             elif label[word_idx] is None:
                 label_ids.append(-100)
             # We set the label for the first token of each word.
@@ -210,16 +234,13 @@ def get_labels_from_map(label_map):
     """
     return [label for label in label_map.keys() if label is not None] #getting a list of labels stored as the dictionary keys
 
-def compute_metrics(predictions, labels, label_list, metric):
+def compute_metrics(predictions, labels, label_list):
     """
     Compute evaluation metrics for Semantic Role Labeling (SRL).
     Return a dictionary with evaluation metrics.
     """
-    #defining the list of labels
-    #label_list = ['_', 'ARG0', 'ARG1', 'ARG1-DSP', 'ARG2', 'ARG3', 'ARG4', 'ARG5', 'ARGA', 'ARGM-ADJ', 'ARGM-ADV', 'ARGM-CAU', 'ARGM-COM', 'ARGM-CXN', 'ARGM-DIR', 'ARGM-DIS', 'ARGM-EXT', 'ARGM-GOL', 'ARGM-LOC', 'ARGM-LVB', 'ARGM-MNR', 'ARGM-MOD', 'ARGM-NEG', 'ARGM-PRD', 'ARGM-PRP', 'ARGM-PRR', 'ARGM-REC', 'ARGM-TMP', 'C-ARG0', 'C-ARG1', 'C-ARG1-DSP', 'C-ARG2', 'C-ARG3', 'C-ARG4', 'C-ARGM-ADV', 'C-ARGM-COM', 'C-ARGM-CXN', 'C-ARGM-DIR', 'C-ARGM-EXT', 'C-ARGM-GOL', 'C-ARGM-LOC', 'C-ARGM-MNR', 'C-ARGM-PRP', 'C-ARGM-PRR', 'C-ARGM-TMP', 'C-V', 'R-ARG0', 'R-ARG1', 'R-ARG2', 'R-ARG3', 'R-ARG4', 'R-ARGM-ADJ', 'R-ARGM-ADV', 'R-ARGM-CAU', 'R-ARGM-COM', 'R-ARGM-DIR', 'R-ARGM-GOL', 'R-ARGM-LOC', 'R-ARGM-MNR', 'R-ARGM-TMP']
-
-    #loading the seqeval metric to compute the metrics from the predictions
-    #metric = load_metric("seqeval")
+    predict = []
+    gold = []
     
     #predictions, labels = eval_pred
     predictions = np.argmax(predictions, axis=2)
@@ -234,13 +255,22 @@ def compute_metrics(predictions, labels, label_list, metric):
         for prediction, label in zip(predictions, labels)
     ]
 
-    results = metric.compute(predictions=true_predictions, references=true_labels)
+    for item in true_predictions:
+        predict.extend(item)
+
+    for item in true_labels:
+        gold.extend(item)
+
+    labels = set(predict+gold) #creating the set of labels
+    labels=list(labels)
+
+    report = classification_report(gold,predict,target_names=labels,output_dict=True)
     
     return {
-        "precision": results["overall_precision"],
-        "recall": results["overall_recall"],
-        "f1": results["overall_f1"],
-        "accuracy": results["overall_accuracy"],
+           "precision": report["macro avg"]["precision"],
+    "recall": report["macro avg"]["recall"],
+    "f1": report["macro avg"]["f1-score"],
+    "accuracy": report["accuracy"]
     }
 
 
@@ -292,7 +322,9 @@ def write_predictions_to_csv(predictions, labels, label_list, file_path):
     - label_list (list): list with possible labels for arguments
     - file_path (str): path to the CSV file to write the predictions to.
     """
-
+    predict = []
+    gold = []
+    
     predictions = np.argmax(predictions, axis=2)
     
     true_predictions = [
@@ -303,19 +335,19 @@ def write_predictions_to_csv(predictions, labels, label_list, file_path):
         [label_list[l] for (p, l) in zip(prediction, label) if l != -100]
         for prediction, label in zip(predictions, labels)
     ]
+
+    for item in true_predictions:
+        predict.extend(item)
+
+    for item in true_labels:
+        gold.extend(item)
     
     #creating a DataFrame with columns 'prediction' and 'gold_label'
-    df = pd.DataFrame({'prediction': true_predictions, 'gold_label': true_labels})
+    df = pd.DataFrame({'prediction': predict, 'gold_label': gold})
     
     #writing the DataFrame to a CSV file
     df.to_csv(file_path, index=False)
 
-
-def read_list(string):
-    """
-    Convert a string representation of a list to an actual list.
-    """
-    return ast.literal_eval(string)
 
 def compute_evaluation_metrics_from_csv(file_path):
     """
@@ -326,23 +358,16 @@ def compute_evaluation_metrics_from_csv(file_path):
     - file_path (str): path to the CSV file containing predictions and gold labels.
     """
     
-    #defining a dictionary specifying the column names and their corresponding converters
-    converters = {'prediction': read_list, 'gold_label': read_list}
-
-    #reading the CSV file into a DataFrame, applying converters to convert lists from strings to lists
-    df = pd.read_csv(file_path, converters=converters)
+    #reading the CSV file into a DataFrame
+    df = pd.read_csv(file_path)
 
     #extracting true predictions and true labels as lists
     true_predictions = df['prediction'].tolist()
     true_labels = df['gold_label'].tolist()
 
-    #computing F1 score
-    f1 = f1_score(true_labels, true_predictions)
+    report = classification_report(true_predictions,true_labels)
 
-    #creating classification report
-    report = classification_report(true_labels, true_predictions)
-
-    return f1, report
+    return report
 
 def print_sentences(dataset, n=20):
 
