@@ -1,3 +1,4 @@
+
 import pandas as pd
 import numpy as np
 from transformers import AutoModelForTokenClassification, TrainingArguments, Trainer
@@ -111,8 +112,6 @@ def read_data_as_sentence(file_path, output_path):
     # return Dataframe
     return df
 
-#mapping labels to numbers
-
 def get_label_mapping(train_df, test_df, dev_df):
     """
     Get the mapping of labels from the argument columns of multiple dataframes.
@@ -126,21 +125,21 @@ def get_label_mapping(train_df, test_df, dev_df):
 
     #concatenating the argument columns from all dataframes to collect all possible arguments
     all_labels = pd.concat([train_df['argument'], test_df['argument'], dev_df['argument']], ignore_index=True)
-    
+
     #extract unique labels
     labels = all_labels.explode().unique()
-    
+
     sorted_labels = sorted([label for label in labels if label is not None]) #converting array to list, removing None value, and sorting alphabetically
     sorted_labels.append(None) #appeding None value back again
     sorted_labels_array = np.array(sorted_labels) #converting list back to array
-    
+
     #moving '_' item to position 0
     labels = np.concatenate((['_'], np.delete(sorted_labels_array, np.where(sorted_labels_array == '_'))))
-    
+
     #mapping the argument labels to a number
     label_map = {label: index for index, label in enumerate(labels)}
     label_map[None] = None #converting the value of None back to None
-    
+
     return label_map
 
 
@@ -152,7 +151,7 @@ def map_labels_to_numbers(label_list,label_map):
     - label_list (list): a list of labels to be mapped to numerical values.
     - label_map (dict): a dictionary mapping labels to numerical values.
     """
-    
+
     mapped_labels = [label_map[label] for label in label_list if label in label_map]
     return mapped_labels
 
@@ -170,7 +169,7 @@ def map_labels_in_dataframe(df,label_map):
 
     #adding new column with mapped labels to the df
     df['mapped_labels'] = df['argument'].apply(lambda x: map_labels_to_numbers(x,label_map))
-    
+
     return df
 
 
@@ -224,15 +223,18 @@ def tokenize_and_align_labels(tokenizer, dataset, label_all_tokens=True):
     return tokenized_inputs
 
 
+
 def get_labels_from_map(label_map):
     """
     Get a list of labels from a label map dictionary, excluding None.
     Return a list of labels.
-    
+
     Parameters:
     - label_map (dict): a dictionary mapping labels to numerical values.
     """
     return [label for label in label_map.keys() if label is not None] #getting a list of labels stored as the dictionary keys
+
+
 
 def compute_metrics(predictions, labels, label_list):
     """
@@ -241,7 +243,7 @@ def compute_metrics(predictions, labels, label_list):
     """
     predict = []
     gold = []
-    
+
     #predictions, labels = eval_pred
     predictions = np.argmax(predictions, axis=2)
 
@@ -265,7 +267,7 @@ def compute_metrics(predictions, labels, label_list):
     labels=list(labels)
 
     report = classification_report(gold,predict,target_names=labels,output_dict=True)
-    
+
     return {
            "precision": report["macro avg"]["precision"],
     "recall": report["macro avg"]["recall"],
@@ -274,36 +276,39 @@ def compute_metrics(predictions, labels, label_list):
     }
 
 
-def load_srl_model(model_id, label_list, batch_size=16):
+
+
+def load_srl_model(model_checkpoint, label_list, batch_size=16):
     """
     Load a BERT transformer model for Semantic Role Labeling (SRL).
     Return a tuple containing the loaded model, its name, and training arguments.
-    
+
     Parameters:
     - model_checkpoint (str): the name of the pre-trained model.
     - label_list (list): a list of labels for token classification.
     - batch_size (int): batch size for training and evaluation.
     """
-    
-    model = AutoModelForTokenClassification.from_pretrained(model_id, num_labels=len(label_list))
+
+    model = AutoModelForTokenClassification.from_pretrained(model_checkpoint, num_labels=len(label_list))
+    model_name = model_checkpoint.split("/")[-1]
     task = 'srl'
     args = TrainingArguments(
-        f"{model_id}-finetuned-{task}",
+        f"{model_name}-finetuned-{task}",
         evaluation_strategy="epoch",
         learning_rate=2e-5,
         per_device_train_batch_size=batch_size,
         per_device_eval_batch_size=batch_size,
-        num_train_epochs=3,
+        num_train_epochs=1,
         weight_decay=0.01,
     )
-    
+
     return model, args
 
 def load_dataset(tokenized_dataset):
     """
     Load tokenized dataset for training or evaluation.
-    Return tokenized dataset as Dataset class. 
-    
+    Return tokenized dataset as Dataset class.
+
     Parameters:
     - tokenized_dataset (dict): tokenized dataset.
     """
@@ -348,23 +353,24 @@ def write_predictions_to_csv(predictions, labels, label_list, file_path):
     df.to_csv(file_path, index=False)
 
 
+
 def compute_evaluation_metrics_from_csv(file_path):
     """
     Compute evaluation metrics (F1 score and classification report) from a CSV file containing predictions and gold labels.
     Return F1 score and classification report.
-    
+
     Parameters:
     - file_path (str): path to the CSV file containing predictions and gold labels.
     """
-    
+
     #reading the CSV file into a DataFrame
     df = pd.read_csv(file_path)
 
     #extracting true predictions and true labels as lists
-    true_predictions = df['prediction'].tolist()
+    predictions = df['prediction'].tolist()
     true_labels = df['gold_label'].tolist()
 
-    report = classification_report(true_predictions,true_labels)
+    report = classification_report(true_labels,predictions)
 
     return report
 
