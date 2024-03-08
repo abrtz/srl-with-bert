@@ -413,7 +413,7 @@ def write_predictions_to_csv(predictions, labels, label_list, file_path, dataset
     whole_predicted=[]
     whole_gold=[]
 
-    for list in class_predicted:
+    for list in classes_predicted:
         for item in list:
             whole_predicted.append(item)
     for list in gold_labels:
