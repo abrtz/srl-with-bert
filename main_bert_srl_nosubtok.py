@@ -101,7 +101,7 @@ def main(args, mode='basic', funct='train', results_path=None, data_range=None )
             model,
             args,
             train_dataset=train_dataset,
-            eval_dataset=test_dataset,
+            eval_dataset=eval_dataset,
             tokenizer=tokenizer,
             compute_metrics=lambda p: compute_metrics(*p, label_list))
         trainer.train()
