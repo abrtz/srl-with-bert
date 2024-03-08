@@ -79,9 +79,16 @@ def read_data_as_sentence(file_path, output_path, mode='basic'):
         for word in sentence:
             form_list.append(word['form'])
             argument_list.append(word['argument'])
+        # Creating emptylist, a list of "_" with the same length as the argument list, to control statements whose argument list is empty.
+        emptylist = ['_']* (len(argument_list))##
         if mode=='basic':
+            # append two None into argument list and emptylist. one for [SEP] and one for predicate that are appended into form list.
             argument_list.append(None)
             argument_list.append(None) #('_')
+            # append two None into emptylist to align it with argument_list 
+            emptylist.append(None)##
+            emptylist.append(None)##
+            # append [SEP] and predicate into form list
             form_list.append('[SEP]')
             form_list.append(str(sentence[0]['predicate']).split('.')[0])
         if mode=='advanced':
@@ -89,13 +96,21 @@ def read_data_as_sentence(file_path, output_path, mode='basic'):
             argument_list.append(None)
             argument_list.append(None)
             argument_list.append(None)
+            # append four None into emptylist to align it with argument_list
+            emptylist.append(None)##
+            emptylist.append(None)##
+            emptylist.append(None)##
+            emptylist.append(None)##
             predicate_index = None
             form_list.append('[SEP]')
+        # Find index of predicate in santence
         for index, word in enumerate(sentence):
             if word['predicate'] == word['form']:
                 predicate_index = int(index)
                 break
+        
         if predicate_index != -1:
+            # If predicate is first word in sentence append ["." "predicate" "next_token_of_predicate"] into input_form
             if predicate_index == 0:
                 form_list.append('.')
                 form_list.append(str(sentence[0]['predicate']).split('.')[0])
@@ -103,18 +118,25 @@ def read_data_as_sentence(file_path, output_path, mode='basic'):
                     form_list.append(str(sentence[predicate_index + 1]['form']))
                 else:
                     form_list.append('.')
+            # If predicate is last word in sentence append ["previous_token_of_predicate" "predicate" "."] into input_form
             elif predicate_index == (len(sentence) - 1):
                 form_list.append(str(sentence[predicate_index - 1]['form']))
                 form_list.append(str(sentence[0]['predicate']).split('.')[0])
                 form_list.append('.')
+            # Otherwise append ["previous_token_of_predicate" "predicate" "next_token_of_predicate"] into input_form
             else:
                 form_list.append(str(sentence[predicate_index - 1]['form']))
                 form_list.append(str(sentence[0]['predicate']).split('.')[0])
                 form_list.append(str(sentence[predicate_index + 1]['form']))
+        
         # After all words in a sentence processed, append all list of sentence to final list as a dict.
-        final_list.append({
+        if emptylist != argument_list:##
+            final_list.append({
                         'input_form': form_list,
                         'argument': argument_list})
+        # final_list.append({
+                        # 'input_form': form_list,
+                        # 'argument': argument_list})
     # Convert list to pandas dataframe
     df = pd.DataFrame(final_list)
     # Save Dataframe to output_path
