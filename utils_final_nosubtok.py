@@ -418,7 +418,7 @@ def write_predictions_to_csv(predictions, labels, label_list, file_path, dataset
             whole_predicted.append(item)
     for list in gold_labels:
         for item in list:
-            gold_labels.append(item)
+            whole_gold.append(item)
 
     # tokenized_instances=[]
     # for sent in test_dataset:
