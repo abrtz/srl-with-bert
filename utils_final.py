@@ -7,34 +7,28 @@ import ast
 from sklearn.metrics import classification_report
 
 
-def read_data_as_sentence(file_path, output_path):
+def read_data_as_sentence(file_path, output_path, mode='basic'):
     """
     Parses the CoNNL-U Plus file and returns a dataframe of sentences.
-    Extracting features from the data and return a dataframe of sentence's Input_form list and sentence's arguments list.
+    Extract features from the data and return a datarame.
 
     Returns a dataframe, where each row represents one sentence with its all words and all features of words (each columns is a list with lengh of number of words in sentence).
 
     file_path (str): The file path to the data to be preprocessed.
     output_path (str): The file path to the save processed dataframe.
     """
-    # sentences list for all sentence in data file
+
     sentences = []
-    # sentence list for all token in each sentence
     sentence = []  # Initialize an empty list for the current sentence
-    # Open data file
     with open(file_path, 'r', encoding="utf8") as file:
-        # For each line in data file
         for line in file:
-            # split line by TAB (\t)
             line = line.strip().split('\t')
             # If the line starts with '#', it's a comment, ignore it
             if line[0].startswith('#'):
                 continue
-            # If the line is not empty
             elif line[0].strip() != '':
 
                 # Create a token if its ID does not contain a period
-                # Each token only has form, predicate, and arguments (argument per each predicate of sentence)
                 if '.' not in line[0] and len(line) > 10:
                     token = {
                         'form': line[1],
@@ -45,7 +39,6 @@ def read_data_as_sentence(file_path, output_path):
                     sentence.append(token)
 
             # A new line indicates the end of a sentence.
-            # If line is empty one sentence has been finished.
             elif line[0].strip() == '':
                 # Append the completed sentence to the sentences list.
                 sentences.append(sentence)
@@ -58,30 +51,27 @@ def read_data_as_sentence(file_path, output_path):
         # Find all predicates in the sentence.
         predicates = [token['predicate'] for token in sentence if token['predicate'] != '_']
 
-        # For every predicate, create a copy of the sentence.
+        # for every predicate, create a copy of the sentence.
         for index, predicate in enumerate(predicates):
-            # For each predicate in the sentence, we make a copy of the sentence.
             sentence_copy = [token.copy() for token in sentence]
-            # Finding the predicate 'form' of the sentence predicate.
             predicate_form = [token['form'] for token in sentence_copy if token['predicate'] == predicate]
             for token in sentence_copy:
 
                 token['predicate'] = predicate_form[0]
 
-                # Keep only the relevant argument for this predicate. Overwrite 'V' and 'C-V' with '_'.
+                # Keep only the relevant argument for this predicate. Overwrite 'V' with '_'.
                 if token['argument'][index] == 'V' or token['argument'][index] == 'C-V':
                     token['argument'] = '_'
                 else:
                     token['argument'] = token['argument'][index]
                 # token['argument'] = token['argument'][index] if token['argument'][index] != 'V' else '_'
-                # token['argument'] = token['argument'][index] if token['argument'][index] != 'C-V' else '_'
             expanded_sentences.append(sentence_copy)
 
     # Create a list to store each sentence.
     final_list = []
     # Iterate over all sentences after copy sentences for each predicate.
     for sentence in expanded_sentences:
-        # Create two empty list one for input_form (token form) and one for arguments of sentence.
+        # Create empty lists for eah feature of data.
         form_list =[]
         argument_list =[]
         # For each word in sentence append features in their list
@@ -91,20 +81,62 @@ def read_data_as_sentence(file_path, output_path):
             argument_list.append(word['argument'])
         # Creating emptylist, a list of "_" with the same length as the argument list, to control statements whose argument list is empty.
         emptylist = ['_']* (len(argument_list))##
-        # append two None into argument list and emptylist. one for [SEP] and one for predicate that are appended into form list.
-        argument_list.append(None)
-        argument_list.append(None)
-        emptylist.append(None)##
-        emptylist.append(None)##
-        # argument_list.append('_')
-        # append [SEP] and predicate into form list
-        form_list.append('[SEP]')
-        form_list.append(str(sentence[0]['predicate']).split('.')[0])
+        if mode=='basic':
+            # append two None into argument list and emptylist. one for [SEP] and one for predicate that are appended into form list.
+            argument_list.append(None)
+            argument_list.append(None) #('_')
+            # append two None into emptylist to align it with argument_list 
+            emptylist.append(None)##
+            emptylist.append(None)##
+            # append [SEP] and predicate into form list
+            form_list.append('[SEP]')
+            form_list.append(str(sentence[0]['predicate']).split('.')[0])
+        if mode=='advanced':
+            argument_list.append(None)
+            argument_list.append(None)
+            argument_list.append(None)
+            argument_list.append(None)
+            # append four None into emptylist to align it with argument_list
+            emptylist.append(None)##
+            emptylist.append(None)##
+            emptylist.append(None)##
+            emptylist.append(None)##
+            predicate_index = None
+            form_list.append('[SEP]')
+        # Find index of predicate in santence
+        for index, word in enumerate(sentence):
+            if word['predicate'] == word['form']:
+                predicate_index = int(index)
+                break
+        
+        if predicate_index != -1:
+            # If predicate is first word in sentence append ["." "predicate" "next_token_of_predicate"] into input_form
+            if predicate_index == 0:
+                form_list.append('.')
+                form_list.append(str(sentence[0]['predicate']).split('.')[0])
+                if predicate_index + 1 < len(sentence):
+                    form_list.append(str(sentence[predicate_index + 1]['form']))
+                else:
+                    form_list.append('.')
+            # If predicate is last word in sentence append ["previous_token_of_predicate" "predicate" "."] into input_form
+            elif predicate_index == (len(sentence) - 1):
+                form_list.append(str(sentence[predicate_index - 1]['form']))
+                form_list.append(str(sentence[0]['predicate']).split('.')[0])
+                form_list.append('.')
+            # Otherwise append ["previous_token_of_predicate" "predicate" "next_token_of_predicate"] into input_form
+            else:
+                form_list.append(str(sentence[predicate_index - 1]['form']))
+                form_list.append(str(sentence[0]['predicate']).split('.')[0])
+                form_list.append(str(sentence[predicate_index + 1]['form']))
+        
         # After all words in a sentence processed, append all list of sentence to final list as a dict.
         if emptylist != argument_list:##
             final_list.append({
                         'input_form': form_list,
                         'argument': argument_list})
+        # final_list.append({
+                        # 'input_form': form_list,
+                        # 'argument': argument_list})
     # Convert list to pandas dataframe
     df = pd.DataFrame(final_list)
     # Save Dataframe to output_path
@@ -234,7 +266,46 @@ def get_labels_from_map(label_map):
     """
     return [label for label in label_map.keys() if label is not None] #getting a list of labels stored as the dictionary keys
 
+# def compute_metrics(predictions, labels, label_list):
+#     """
+#     Compute evaluation metrics for Semantic Role Labeling (SRL).
+#     Return a dictionary with evaluation metrics.
+#     """
+#     predict = []
+#     gold = []
 
+#     #predictions, labels = eval_pred
+#     predictions = np.argmax(predictions, axis=2)
+
+#     #removing ignored index (special tokens)
+#     true_predictions = [
+#         [label_list[p] for (p, l) in zip(prediction, label) if l != -100]
+#         for prediction, label in zip(predictions, labels)
+#     ]
+#     true_labels = [
+#         [label_list[l] for (p, l) in zip(prediction, label) if l != -100]
+#         for prediction, label in zip(predictions, labels)
+#     ]
+
+#     for item in true_predictions:
+#         predict.extend(item)
+
+#     for item in true_labels:
+#         gold.extend(item)
+
+#     labels = set(predict+gold) #creating the set of labels
+#     labels=list(labels)
+
+#     report = classification_report(predict, gold,target_names=labels,output_dict=True)
+
+#     return {
+#            "precision": report["macro avg"]["precision"],
+#     "recall": report["macro avg"]["recall"],
+#     "f1": report["macro avg"]["f1-score"],
+#     "accuracy": report["accuracy"]
+#     }
+import numpy as np
+from sklearn.metrics import classification_report
 
 def compute_metrics(predictions, labels, label_list):
     """
@@ -248,7 +319,7 @@ def compute_metrics(predictions, labels, label_list):
     predictions = np.argmax(predictions, axis=2)
 
     #removing ignored index (special tokens)
-    predictions = [
+    true_predictions = [
         [label_list[p] for (p, l) in zip(prediction, label) if l != -100]
         for prediction, label in zip(predictions, labels)
     ]
@@ -257,7 +328,7 @@ def compute_metrics(predictions, labels, label_list):
         for prediction, label in zip(predictions, labels)
     ]
 
-    for item in predictions:
+    for item in true_predictions:
         predict.extend(item)
 
     for item in true_labels:
@@ -267,8 +338,6 @@ def compute_metrics(predictions, labels, label_list):
     labels=list(labels)
 
     report = classification_report(gold,predict,target_names=labels,output_dict=True)
-
-    print("POOP")
 
     return {
            "precision": report["macro avg"]["precision"],
@@ -304,7 +373,7 @@ def load_srl_model(model_checkpoint, label_list, batch_size=16):
         weight_decay=0.01,
     )
 
-    return model, args
+    return model, model_name, args
 
 def load_dataset(tokenized_dataset):
     """
@@ -318,7 +387,7 @@ def load_dataset(tokenized_dataset):
 
     return dict_tokenized
 
-def write_predictions_to_csv(predictions, labels, label_list, file_path):
+def write_predictions_to_csv(predictions, labels, label_list, file_path, dataset_ids, tokenizer, test_dataset):
     """
     Write true predictions and true labels to a CSV file using a DataFrame.
 
@@ -328,32 +397,50 @@ def write_predictions_to_csv(predictions, labels, label_list, file_path):
     - label_list (list): list with possible labels for arguments
     - file_path (str): path to the CSV file to write the predictions to.
     """
-    predict = []
-    gold = []
-    
+
+
     predictions = np.argmax(predictions, axis=2)
-    
-    true_predictions = [
+
+    classes_predicted = [
         [label_list[p] for (p, l) in zip(prediction, label) if l != -100]
         for prediction, label in zip(predictions, labels)
     ]
-    true_labels = [
+    gold_labels = [
         [label_list[l] for (p, l) in zip(prediction, label) if l != -100]
         for prediction, label in zip(predictions, labels)
     ]
 
-    for item in true_predictions:
-        predict.extend(item)
 
-    for item in true_labels:
-        gold.extend(item)
-    
-    #creating a DataFrame with columns 'prediction' and 'gold_label'
-    df = pd.DataFrame({'prediction': predict, 'gold_label': gold})
-    
+    whole_predicted=[]
+    whole_gold=[]
+    tokenized_instances=[]
+    for sent in test_dataset:
+        tokens = tokenizer.convert_ids_to_tokens(sent)
+        tokenized_instances.append(tokens)
+    inputs_with_offsets = tokenizer(tokenized_instances, return_offsets_mapping=True)
+    #subtokens=tokenizer.tokenize(test_dataset)
+    predict_table=zip(inputs_with_offsets, classes_predicted, gold_labels)
+    pred_dicts_list=[]
+    for ids, pred, gold in predicted_table:
+        pred_dict={}
+        pred_dict['ids']=ids
+        pred_dict['pred']=pred
+        pred_dict['gold']=gold
+        pred_dict_list.append(pred_dict)
+
+    for item in pred_dicts_list:
+        for id in item['ids']:
+            start=id[0]
+            end=[1]
+            whole_predicted.append(item['pred'][start])
+            whole_gold.append(item['gold'[start]])
+
+
+
+    df = pd.DataFrame({'prediction': whole_predicted, 'gold_label': whole_gold})
+
     #writing the DataFrame to a CSV file
     df.to_csv(file_path, index=False)
-
 
 
 def compute_evaluation_metrics_from_csv(file_path):
@@ -372,15 +459,6 @@ def compute_evaluation_metrics_from_csv(file_path):
     predictions = df['prediction'].tolist()
     true_labels = df['gold_label'].tolist()
 
-    report = classification_report(true_labels,predictions)
+    report = classification_report(predictions,true_labels)
 
     return report
-
-def print_sentences(dataset, n=20):
-
-    for form, argument in zip(dataset.input_form[:n], dataset.argument[:n]):
-        for f, a in zip(form, argument):
-            if f == '[SEP]':
-                print('-' * 40)
-            print(f"form: {f:<15} argument: {a}")
-        print('\n' + '=' * 40 + '\n')
